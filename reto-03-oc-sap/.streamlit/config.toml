@@ -1,0 +1,23 @@
+# Configuración mínima del front. Aquí no va ningún secreto: las credenciales
+# se pegan en Settings → Secrets de Streamlit Community Cloud (ver DEPLOY.md).
+
+[theme]
+base = "light"
+primaryColor = "#1f6feb"            # acciones principales (botón Confirmar)
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f3f5f9"  # paneles, expanders y tablas
+textColor = "#111418"
+
+[server]
+headless = true                     # sin abrir navegador: así corre en el servidor
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false            # no enviamos telemetría de la demo
+
+[client]
+# Un error del proveedor LLM o de una herramienta se muestra en el chat en
+# lenguaje claro (CA5): lo captura `_responder` en web/app.py, no Streamlit.
+# `showErrorDetails` se deja en su valor por defecto a propósito, para que un
+# fallo del propio front siga siendo diagnosticable en vivo.
+toolbarMode = "minimal"

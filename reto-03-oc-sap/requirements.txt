@@ -1,0 +1,15 @@
+# Dependencias de producción para Streamlit Community Cloud.
+#
+# `pyproject.toml` + `uv.lock` son la fuente de verdad en local; este archivo
+# existe porque Streamlit Community Cloud instala con pip. Las versiones mínimas
+# son las mismas de `pyproject.toml`: si cambias una allí, cámbiala aquí.
+#
+# La clave del modelo NO va en este repositorio: se pega en
+# Settings → Secrets de Streamlit (ver DEPLOY.md).
+
+streamlit>=1.40      # front de chat
+openai>=1.54         # SDK del proveedor LLM
+pydantic>=2.9        # valida argumentos de herramientas y el payload (ADR-001)
+httpx>=0.27          # cliente HTTP del front hacia la API, si se usa API_URL
+fastapi>=0.115       # API del chat
+uvicorn>=0.32        # servidor ASGI

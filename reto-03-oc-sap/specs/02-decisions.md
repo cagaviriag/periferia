@@ -282,5 +282,40 @@ archivo.
   paso que el código puede hacer, y el PRD §8 pide que un comando levante todo.
 
 **Deuda:** este lector no cubre valores multilínea ni interpolación de variables, que
-`python-dotemv` sí. Ningún valor de `.env.example` los necesita. Si algún día se
+`python-dotenv` sí. Ningún valor de `.env.example` los necesita. Si algún día se
 necesitan, la decisión se revisa.
+
+---
+
+## ADR-011 · Un solo servicio: el front llama al agente en proceso **[SOLUCION.md]**
+
+**Estado:** aceptada
+**Contexto:** el PRD §9.3 exige una URL pública viva durante la defensa, con una
+**penalización explícita de −10** si no existe. El §6.1 exige un backend que exponga la
+API del chat, y el §6.4 da los tres endpoints como *"diseño libre, pero documentado"*.
+
+**Decisión:** el front Streamlit invoca `ejecutar_turno` **en proceso**, y conmuta a
+HTTP si está definida la variable `API_URL`. La API FastAPI existe, está documentada y
+corre en local, pero el artefacto desplegado es un único servicio en Streamlit
+Community Cloud.
+
+**Razón:** desplegar dos servicios (FastAPI en Render o Fly + Streamlit) significa dos
+pipelines, configuración de CORS, dos juegos de variables de entorno y el doble de
+puntos de falla — para un chat de demostración de un solo usuario. Con −10 puntos en
+juego y tiempo limitado, la fiabilidad del despliegue vale más que la pureza
+arquitectónica. Streamlit Community Cloud despliega desde el repositorio público, gratis
+y sin configuración de infraestructura.
+
+**Lo que no se sacrifica:** la separación de capas sigue intacta y verificable. El front
+no conoce las herramientas ni los controles; habla con `ejecutar_turno` a través de una
+sola función (`_responder`). Sustituir la llamada en proceso por HTTP es cambiar una
+variable de entorno, no refactorizar.
+
+**Alternativa descartada:** un `Dockerfile` en Render corriendo uvicorn y Streamlit bajo
+un supervisor, con una sola URL. Es la opción correcta para producción y la que
+recomendaría si el tráfico fuera real, pero añade una capa de contenedor que depurar
+bajo presión de tiempo.
+
+**Riesgo asumido:** si el evaluador quisiera probar `POST /api/chat` contra la URL
+pública, no estaría expuesto. Mitigación: el README documenta cómo levantar la API en
+local en un comando, y `/api/health` se puede demostrar en vivo durante la defensa.
