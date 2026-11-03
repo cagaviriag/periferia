@@ -1,0 +1,35 @@
+# ── Insumos originales entregados por Periferia (no se versionan) ───────────
+# La carpeta descomprimida del reto. Los fixtures que SÍ necesita la solución
+# ya están copiados en reto-03-oc-sap/fixtures/ y se versionan desde allí.
+Retos IA Periferia IT Group/
+
+# Instructivos en PDF de los tres retos
+*.pdf
+
+# ── Sistema operativo ───────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# ── Secretos ────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# ── Salidas de ejecución (el PRD exige entregar sin out/) ───────────────────
+out/
