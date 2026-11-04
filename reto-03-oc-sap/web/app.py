@@ -30,11 +30,22 @@ from typing import Any
 
 import streamlit as st
 
-# web/app.py → parents[0]=web, parents[1]=raíz del proyecto. La raíz entra al
-# path porque Streamlit Community Cloud arranca con `web/` como directorio del
-# script y `import app.core.agente` no la encontraría.
+# web/app.py → parents[0]=web, parents[1]=raíz del proyecto.
 RAIZ = Path(__file__).resolve().parents[1]
-if str(RAIZ) not in sys.path:
+
+# La raíz del proyecto tiene que ir **primera** en el path, y esta línea es
+# load-bearing por dos razones:
+#
+# 1. Streamlit arranca el script con su propia carpeta (`web/`) al frente del
+#    `sys.path`, y la raíz no está: `import app.core.agente` no la encontraría.
+# 2. Peor: este archivo se llama `app.py` y el backend es el paquete `app/`.
+#    Con `web/` delante, `import app` importaría ESTE archivo como el paquete
+#    `app`, volvería a ejecutar la interfaz entera dentro de un import y
+#    reventaría con claves de widget duplicadas.
+#
+# Se comprueba la posición 0 y no la pertenencia porque Streamlit reejecuta el
+# script en cada interacción: insertar sin mirar haría crecer el path sin fin.
+if sys.path[:1] != [str(RAIZ)]:
     sys.path.insert(0, str(RAIZ))
 
 # Variables que el backend lee del entorno (app/core/config.py). En Streamlit
@@ -616,10 +627,9 @@ def _dibujar_validaciones() -> None:
 
 def _dibujar_oc_creada() -> None:
     """El número de OC, si el agente ya la creó (HU-5)."""
-    llamada = _ultima_llamada("oc_crear")
-    if llamada is None:
+    datos = _ultimos_datos("oc_crear")
+    if not datos:
         return
-    datos = _datos(llamada)
     nota = " (idempotente: ya existía)" if datos.get("idempotente") else ""
     st.success(
         f"**OC `{datos.get('numero_oc', '—')}`** creada el {datos.get('fecha', '—')}{nota}"
@@ -684,7 +694,8 @@ def _dibujar_estado() -> None:
     try:
         from app.core.config import cargar_config, resumen_publico
 
-        resumen = resumen_publico(cargar_config(requiere_llm=False))
+        config = cargar_config(requiere_llm=False)
+        resumen = resumen_publico(config)
         st.write(f"Proveedor: `{resumen['provider']}`")
         st.write(f"Modelo: `{resumen['model']}`")
         st.write(f"Tope de iteraciones: `{resumen['max_iteraciones']}`")
@@ -692,8 +703,10 @@ def _dibujar_estado() -> None:
         st.caption(f"No pude leer la configuración: {excepcion}")
         return
 
-    # C7: solo se informa si la clave está puesta. Su valor nunca se muestra.
-    if os.environ.get("OPENAI_API_KEY", "").strip():
+    # C7 · solo se informa si la clave está puesta: se mide su longitud, nunca se
+    # muestra. `cargar_config` la busca en el entorno y en el `.env`, así que
+    # preguntarle a él es lo único que no miente.
+    if config.openai_api_key.get_secret_value().strip():
         st.success("Clave del modelo configurada")
     else:
         st.warning("Falta `OPENAI_API_KEY`: el chat no podrá responder.")
@@ -721,27 +734,35 @@ def _inicializar_estado() -> None:
     # Un mensaje: {"rol": "user"|"assistant", "texto": str, "tool_calls": list}
     st.session_state.setdefault("historial", [])
     st.session_state.setdefault("tool_calls", [])
+    # Resultados completos de las herramientas, para el panel: ver
+    # `_refrescar_resultados`.
+    st.session_state.setdefault("resultados", [])
     st.session_state.setdefault("necesita_confirmacion", False)
     st.session_state.setdefault("pendiente", None)
 
 
 def _reiniciar_sesion() -> None:
     """Sesión nueva: el PRD §11 arranca la demo con una (`en tu chat, sesión nueva`)."""
-    for clave in ("session_id", "historial", "tool_calls", "necesita_confirmacion", "sesion_agente"):
+    # El `Agente` no se borra: las sesiones viven dentro de él y un `session_id`
+    # nuevo ya es una conversación nueva. Reconstruirlo volvería a leer el prompt
+    # y a crear el cliente del proveedor sin ninguna necesidad.
+    # No hace falta relanzar el script: la barra lateral se dibuja antes que el
+    # chat, así que el resto de esta misma pasada ya pinta la sesión vacía.
+    for clave in ("session_id", "historial", "tool_calls", "resultados", "necesita_confirmacion"):
         st.session_state.pop(clave, None)
     _inicializar_estado()
-    st.rerun()
 
 
 def _encolar(mensaje: str) -> None:
-    """Deja un mensaje de usuario listo y relanza el script para procesarlo.
+    """Deja un mensaje de usuario listo para el siguiente punto de proceso.
 
-    Streamlit vuelve a ejecutar el script completo en cada interacción, así que
-    el mensaje no se puede procesar dentro del callback de un botón: se guarda
-    y se atiende al principio de la pasada siguiente.
+    Streamlit reejecuta el script completo en cada interacción. Un botón de la
+    barra lateral se dibuja antes que el chat, así que su mensaje se atiende en
+    esta misma pasada; uno de la parte baja (el de confirmar) llega tarde y lo
+    recoge el `st.rerun()` del final de `main`. Encolar en vez de procesar en el
+    sitio es lo que permite que los dos caminos compartan código.
     """
     st.session_state.pendiente = mensaje
-    st.rerun()
 
 
 def _propagar_secretos() -> None:
@@ -783,6 +804,9 @@ def _procesar_turno(mensaje: str) -> None:
     )
     st.session_state.tool_calls.extend(turno.tool_calls)
     st.session_state.necesita_confirmacion = turno.needs_confirmation
+    # El panel de la derecha se dibuja después de este punto, así que recoge los
+    # resultados completos del turno que acaba de pasar.
+    _refrescar_resultados()
 
 
 def main() -> None:
@@ -797,9 +821,11 @@ def main() -> None:
         "el SAP simulado. Cada valor que ves salió de una herramienta (CA2)."
     )
 
-    # El mensaje encolado se saca antes de dibujar para que el historial ya lo
-    # incluya cuando se pinte la conversación.
-    pendiente = st.session_state.pendiente
+    # El mensaje a procesar sale de dos sitios: el campo de entrada —cuyo envío
+    # ya provocó esta pasada, y cuyo texto está en `st.session_state.entrada`— o
+    # un botón que encoló algo. Se resuelve antes de dibujar para que el
+    # historial ya lo incluya cuando se pinte la conversación.
+    pendiente = st.session_state.pendiente or st.session_state.get("entrada")
     st.session_state.pendiente = None
     if pendiente:
         st.session_state.historial.append({"rol": "user", "texto": pendiente, "tool_calls": []})
@@ -819,10 +845,16 @@ def main() -> None:
         _dibujar_panel()
 
     # Comportamiento 2 del PRD §6.1: el campo de entrada. Va en el nivel
-    # superior del script para que Streamlit lo ancle al pie de la página.
-    entrada = st.chat_input("Escribe tu mensaje… por ejemplo: Procesa la solicitud sol-004")
-    if entrada:
-        _encolar(entrada)
+    # superior del script para que Streamlit lo ancle al pie de la página. Su
+    # texto se lee arriba desde `st.session_state.entrada`, no aquí: enviarlo ya
+    # relanzó el script, y procesarlo en este punto obligaría a una pasada más.
+    st.chat_input("Escribe tu mensaje… por ejemplo: Procesa la solicitud sol-004", key="entrada")
+
+    # Único `st.rerun()` del front: recoge lo que encoló un botón dibujado
+    # después del punto de proceso —el de confirmar— y lo atiende en la pasada
+    # siguiente. Va al final del script, fuera de toda columna.
+    if st.session_state.pendiente:
+        st.rerun()
 
 
 main()
