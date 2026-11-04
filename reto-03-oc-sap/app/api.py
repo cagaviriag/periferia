@@ -27,19 +27,27 @@ Dos decisiones que conviene poder defender:
    una capa en español.
 
 Esta capa no decide nada del negocio: traduce HTTP a `Agente.responder` y vuelve.
-El único módulo del sistema que menciona OpenAI, además de su adaptador, es
+El único módulo que menciona OpenAI es `app/llm/modelo.py`, y quien lo llama,
 `obtener_agente`.
+
+3. **El historial de la sesión se deriva, no se guarda dos veces.** `GET
+   /api/sessions/{id}` arma mensajes, `toolCalls[]`, `tokensUsados` y
+   `needsConfirmation` desde la lista de mensajes que devuelve el checkpointer del
+   agente, con las funciones de `app/core/historial.py`. Antes esos cuatro datos
+   eran campos de un objeto `Sesion`; ahora ninguno puede desincronizarse del
+   historial real.
 """
 
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException
+from langchain_core.messages import AIMessage, AnyMessage
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.core.agente import Agente, LlamadaRegistrada, Sesion, cargar_comportamiento
+from app.core.agente import Agente, cargar_comportamiento
 from app.core.config import cargar_config, resumen_publico
-from app.llm.adapter import Mensaje
-from app.llm.openai_adapter import AdaptadorOpenAI
+from app.core.historial import LlamadaRegistrada, llamadas, pendiente, rol, tokens
+from app.llm.modelo import crear_modelo
 
 app = FastAPI(
     title="Agente de Órdenes de Compra SAP",
@@ -47,8 +55,8 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Sesiones en memoria (PRD §6.1: "memoria o archivo bastan"). Viven dentro del
-# agente, y el agente vive aquí: un único proceso, un único estado.
+# Sesiones en memoria (PRD §6.1: "memoria o archivo bastan"). Viven en el
+# checkpointer del agente, y el agente vive aquí: un proceso, un único estado.
 _agente: Agente | None = None
 
 
@@ -69,11 +77,11 @@ def obtener_agente() -> Agente:
         # mensaje de `cargar_config` dice exactamente qué copiar en el `.env`.
         raise HTTPException(status_code=503, detail=str(fallo)) from fallo
 
-    # La única línea del backend que elige proveedor de LLM. Cambiarlo es cambiar
-    # esta línea: ni el ciclo del agente ni la API saben que existe OpenAI.
+    # `crear_modelo` es el único punto que elige proveedor de LLM: ni el agente ni
+    # la API saben que existe OpenAI.
     _agente = Agente(
         config=config,
-        adaptador=AdaptadorOpenAI(config),
+        modelo=crear_modelo(config),
         comportamiento=cargar_comportamiento(config.raiz),
     )
     return _agente
@@ -165,10 +173,10 @@ def obtener_sesion(
     session_id: str, agente: Annotated[Agente, Depends(obtener_agente)]
 ) -> RespuestaSesion:
     """Historial completo de la sesión: mensajes y llamadas a herramientas (CA4)."""
-    sesion = agente.buscar_sesion(session_id)
-    if sesion is None:
+    mensajes = agente.historial(session_id)
+    if not mensajes:
         raise HTTPException(status_code=404, detail=f"No existe la sesión {session_id!r}.")
-    return _respuesta_sesion(sesion)
+    return _respuesta_sesion(session_id, mensajes)
 
 
 @app.get("/api/health", response_model=RespuestaHealth)
@@ -208,21 +216,27 @@ def _visible(registro: LlamadaRegistrada) -> LlamadaVisible:
     )
 
 
-def _mensaje_historial(mensaje: Mensaje) -> MensajeHistorial:
-    """El mensaje del dominio, sin los identificadores internos del tool-calling."""
+def _mensaje_historial(mensaje: AnyMessage) -> MensajeHistorial:
+    """El mensaje de LangChain, sin los identificadores internos del tool-calling."""
+    pedidas = (
+        [llamada["name"] for llamada in mensaje.tool_calls]
+        if isinstance(mensaje, AIMessage)
+        else []
+    )
     return MensajeHistorial(
-        role=mensaje.rol,
-        content=mensaje.contenido,
-        tool_name=mensaje.nombre_herramienta,
-        tool_calls=[llamada.nombre for llamada in mensaje.tool_calls],
+        role=rol(mensaje),
+        content=mensaje.text,
+        tool_name=getattr(mensaje, "name", None) if rol(mensaje) == "tool" else None,
+        tool_calls=pedidas,
     )
 
 
-def _respuesta_sesion(sesion: Sesion) -> RespuestaSesion:
+def _respuesta_sesion(session_id: str, mensajes: list[AnyMessage]) -> RespuestaSesion:
+    """Todo sale del historial de mensajes: no hay un segundo estado que mantener."""
     return RespuestaSesion(
-        session_id=sesion.id,
-        messages=[_mensaje_historial(mensaje) for mensaje in sesion.mensajes],
-        tool_calls=[_visible(registro) for registro in sesion.llamadas],
-        tokens_usados=sesion.tokens_usados,
-        needs_confirmation=sesion.espera_confirmacion,
+        session_id=session_id,
+        messages=[_mensaje_historial(mensaje) for mensaje in mensajes],
+        tool_calls=[_visible(registro) for registro in llamadas(mensajes)],
+        tokens_usados=tokens(mensajes),
+        needs_confirmation=pendiente(mensajes),
     )

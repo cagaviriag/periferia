@@ -149,7 +149,7 @@ def _bucle_de_eventos() -> asyncio.AbstractEventLoop:
 def _agente_en_proceso() -> Any:
     """Construye, una vez por sesión, el `Agente` de `app/core/agente.py`.
 
-    Es el mismo armado de `app/api.py`: configuración → adaptador del proveedor
+    Es el mismo armado de `app/api.py`: configuración → modelo del proveedor
     → comportamiento desde `agent/prompt.md`. Si falta la clave, `cargar_config`
     lanza con un mensaje accionable y `_responder` lo convierte en texto del
     chat (CA5). La clave no se toca aquí: viaja dentro de la configuración (C7).
@@ -159,12 +159,12 @@ def _agente_en_proceso() -> Any:
 
     from app.core.agente import Agente, cargar_comportamiento
     from app.core.config import cargar_config
-    from app.llm.openai_adapter import AdaptadorOpenAI
+    from app.llm.modelo import crear_modelo
 
     config = cargar_config()
     agente = Agente(
         config=config,
-        adaptador=AdaptadorOpenAI(config),
+        modelo=crear_modelo(config),
         comportamiento=cargar_comportamiento(config.raiz),
     )
     st.session_state.agente = agente
@@ -268,11 +268,15 @@ def _leer_resultados() -> list[dict[str, Any]]:
             if isinstance(mensaje, dict) and mensaje.get("role") == "tool"
         ]
 
-    sesion = _agente_en_proceso().sesion(st.session_state.session_id)
+    # El historial de la sesión es ahora la lista de mensajes de LangChain que
+    # guarda el checkpointer del agente; `rol` la traduce al vocabulario del PRD.
+    from app.core.historial import rol
+
+    mensajes = _agente_en_proceso().historial(st.session_state.session_id)
     return [
-        {"nombre": mensaje.nombre_herramienta or "", "resultado": mensaje.contenido}
-        for mensaje in sesion.mensajes
-        if mensaje.rol == "tool"
+        {"nombre": str(getattr(mensaje, "name", "") or ""), "resultado": mensaje.text}
+        for mensaje in mensajes
+        if rol(mensaje) == "tool"
     ]
 
 
