@@ -72,7 +72,8 @@ simple es el correcto.
      26.500.000, desviación 6,00 %) y el bloque de confirmación resaltado.
    - Pulsa **✅ Confirmar**: el agente debe responder con el número de OC.
 
-8. **Pega la URL pública en el `README.md`** (sección "Enlace público") y confirma que
+8. **Pega la URL pública en el [`README.md` de la raíz del repositorio](../README.md)**
+   (sección "Enlace público") y confirma que
    responde desde una ventana de incógnito, sin sesión de GitHub.
 
 ---
