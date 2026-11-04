@@ -13,6 +13,13 @@ No requiere clave de ningún proveedor.
 Además de los 6 casos, demuestra dos cosas que el PRD exige explícitamente:
 idempotencia ejecutando `sol-001` dos veces, y una confirmación explícita para
 `sol-004`.
+
+En la rama `refactor/langchain` las herramientas son objetos `BaseTool` y no
+funciones, así que un consumidor sin LLM ya no las llama: las **invoca** con
+`.ainvoke({...})`. El `Contexto` viaja dentro de ese mismo dict (`InjectedToolArg`).
+Es el impuesto del decorador a quien no es un modelo: los argumentos pasan de ser
+un modelo Pydantic que mypy revisa a un `dict[str, Any]` que nadie revisa hasta
+que el proceso corre.
 """
 
 import asyncio
@@ -22,10 +29,6 @@ from typing import Any
 
 from app.core.io import limpiar_salida
 from app.tools.oc import (
-    ArgsCaso,
-    ArgsConstruirPayload,
-    ArgsCrear,
-    ArgsValidar,
     Contexto,
     oc_construir_payload,
     oc_crear,
@@ -70,7 +73,7 @@ async def procesar(caso: str, ctx: Contexto, *, confirmado: bool = False) -> dic
     print(f"\n┌─ {caso} {'─' * (ANCHO - len(caso) - 4)}")
 
     # 1 · Leer el paquete (HU-1)
-    respuesta = await oc_leer_paquete(ArgsCaso(caso=caso), ctx)
+    respuesta: str = await oc_leer_paquete.ainvoke({"caso": caso, "ctx": ctx})
     paquete = _datos(respuesta)
     if not paquete:
         print(f"│  ✗ no se pudo leer: {_error(respuesta)}")
@@ -87,7 +90,7 @@ async def procesar(caso: str, ctx: Contexto, *, confirmado: bool = False) -> dic
         print(f"│  faltantes   {', '.join(paquete['faltantes'])}")
 
     # 2 · Validar los diez controles (HU-2)
-    respuesta = await oc_validar(ArgsValidar(caso=caso), ctx)
+    respuesta = await oc_validar.ainvoke({"caso": caso, "ctx": ctx})
     validacion = _datos(respuesta)
     bloqueos = validacion["bloqueos"]
     confirmaciones = validacion["confirmaciones"]
@@ -113,14 +116,14 @@ async def procesar(caso: str, ctx: Contexto, *, confirmado: bool = False) -> dic
         return {"caso": caso, "resultado": "bloqueada", "bloqueos": _codigos(bloqueos)}
 
     # 3 · Evidencia de aprobación — antes del payload, que consume su sha256 (HU-4)
-    respuesta = await oc_generar_evidencia(ArgsCaso(caso=caso), ctx)
+    respuesta = await oc_generar_evidencia.ainvoke({"caso": caso, "ctx": ctx})
     evidencia = _datos(respuesta)
     print(f"│  evidencia   {evidencia['ruta']}")
     print(f"│  sha256      {str(evidencia['sha256'])[:32]}…")
 
     # 4 · Construir el payload tal como quedaría en SAP (HU-3)
-    respuesta = await oc_construir_payload(
-        ArgsConstruirPayload(caso=caso, derivados=derivados or None), ctx
+    respuesta = await oc_construir_payload.ainvoke(
+        {"caso": caso, "derivados": derivados or None, "ctx": ctx}
     )
     construccion = _datos(respuesta)
     if not construccion:
@@ -137,7 +140,9 @@ async def procesar(caso: str, ctx: Contexto, *, confirmado: bool = False) -> dic
     print(f"│  descripción \"{posicion['descripcion']}\" ({len(posicion['descripcion'])} ≤ 40)")
 
     # 5 · Crear la OC (HU-5)
-    respuesta = await oc_crear(ArgsCrear(caso=caso, payload=payload, confirmado=confirmado), ctx)
+    respuesta = await oc_crear.ainvoke(
+        {"caso": caso, "payload": payload, "confirmado": confirmado, "ctx": ctx}
+    )
     creacion = _datos(respuesta)
 
     if not creacion:

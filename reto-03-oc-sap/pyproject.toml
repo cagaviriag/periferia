@@ -10,6 +10,8 @@ dependencies = [
     "uvicorn>=0.32",      # servidor ASGI
     "streamlit>=1.40",    # front de chat
     "httpx>=0.27",        # cliente HTTP del front hacia la API
+    "langchain>=1.4.8",
+    "langchain-openai>=1.7.3",
 ]
 
 [dependency-groups]

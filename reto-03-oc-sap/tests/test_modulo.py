@@ -62,7 +62,9 @@ def test_las_herramientas_del_modulo_son_las_mismas_objetos() -> None:
     from modulo.tools.oc import HERRAMIENTAS as DEL_MODULO
 
     assert DEL_MODULO is DE_LA_APP
-    assert [h.nombre for h in DEL_MODULO] == [
+    # `name`, no `nombre`: con `@tool` el nombre lo pone LangChain desde la
+    # función, y es el que ve el modelo.
+    assert [h.name for h in DEL_MODULO] == [
         "oc_leer_paquete",
         "oc_validar",
         "oc_generar_evidencia",
@@ -88,13 +90,20 @@ def test_el_modulo_se_importa_sin_el_servidor() -> None:
 
 
 def test_cada_herramienta_expone_los_tres_miembros_del_contrato() -> None:
+    """Los tres miembros del PRD §6.2, con los nombres que les pone LangChain.
+
+    `description` sigue llamándose igual; `args` (el esquema Pydantic) pasa a ser
+    `args_schema` y `execute` pasa a ser `ainvoke`. El `ctx` inyectado no aparece
+    en el esquema: el modelo no lo ve y no puede fijar la raíz del proyecto.
+    """
     from modulo.tools.oc import HERRAMIENTAS
 
     for herramienta in HERRAMIENTAS:
-        assert herramienta.description.strip(), herramienta.nombre
-        esquema = herramienta.args.model_json_schema()
-        assert esquema["type"] == "object", herramienta.nombre
+        assert herramienta.description.strip(), herramienta.name
+        esquema = herramienta.tool_call_schema.model_json_schema()
+        assert esquema["type"] == "object", herramienta.name
         # Cada campo describe para qué sirve: es lo único que el modelo lee.
         for campo in esquema.get("properties", {}).values():
-            assert campo.get("description"), herramienta.nombre
-        assert callable(herramienta.execute), herramienta.nombre
+            assert campo.get("description"), herramienta.name
+        assert "ctx" not in esquema.get("properties", {}), herramienta.name
+        assert callable(herramienta.ainvoke), herramienta.name

@@ -27,10 +27,6 @@ from app.core.log import ENCABEZADO_CONTROL
 from app.core.modelos import OrdenCompra
 from app.tools.oc import (
     HERRAMIENTAS,
-    ArgsCaso,
-    ArgsConstruirPayload,
-    ArgsCrear,
-    ArgsValidar,
     Contexto,
     oc_construir_payload,
     oc_crear,
@@ -140,9 +136,9 @@ def codigos(veredictos: list[dict[str, Any]]) -> list[str]:
 
 def payload_del_caso(ctx: Contexto, caso: str, derivados: dict[str, str]) -> dict[str, Any]:
     """Evidencia + payload, en el orden obligatorio del proceso."""
-    datos(llamar(oc_generar_evidencia(ArgsCaso(caso=caso), ctx)))
+    datos(llamar(oc_generar_evidencia.ainvoke({"caso": caso, "ctx": ctx})))
     construido = datos(
-        llamar(oc_construir_payload(ArgsConstruirPayload(caso=caso, derivados=derivados), ctx))
+        llamar(oc_construir_payload.ainvoke({"caso": caso, "derivados": derivados, "ctx": ctx}))
     )
     payload = construido["payload"]
     assert isinstance(payload, dict)
@@ -164,7 +160,7 @@ def test_matriz_del_oraculo(ctx: Contexto, caso: str) -> None:
     """Los 6 casos reproducen `specs/01-oracle.md` sin pasar por el modelo."""
     esperado = MATRIZ[caso]
 
-    validacion = datos(llamar(oc_validar(ArgsValidar(caso=caso), ctx)))
+    validacion = datos(llamar(oc_validar.ainvoke({"caso": caso, "ctx": ctx})))
     assert validacion["apta"] is esperado["apta"]
     assert codigos(validacion["bloqueos"]) == esperado["bloqueos"]
     assert codigos(validacion["confirmaciones"]) == esperado["confirmaciones"]
@@ -179,7 +175,7 @@ def test_matriz_del_oraculo(ctx: Contexto, caso: str) -> None:
 
     payload = payload_del_caso(ctx, caso, validacion["derivados"])
 
-    sin_confirmar = llamar(oc_crear(ArgsCrear(caso=caso, payload=payload), ctx))
+    sin_confirmar = llamar(oc_crear.ainvoke({"caso": caso, "payload": payload, "ctx": ctx}))
     if esperado["crea_sin_confirmar"]:
         creada = datos(sin_confirmar)
         assert creada["numero_oc"] == PRIMERA_OC          # I2
@@ -190,7 +186,9 @@ def test_matriz_del_oraculo(ctx: Contexto, caso: str) -> None:
     assert sin_confirmar["ok"] is False
     assert "requiere confirmación" in sin_confirmar["error"]
 
-    confirmada = datos(llamar(oc_crear(ArgsCrear(caso=caso, payload=payload, confirmado=True), ctx)))
+    confirmada = datos(
+        llamar(oc_crear.ainvoke({"caso": caso, "payload": payload, "confirmado": True, "ctx": ctx}))
+    )
     assert confirmada["numero_oc"] == PRIMERA_OC
     assert confirmada["retroactiva"] is esperado["retroactiva"]
 
@@ -206,7 +204,7 @@ def _afirmar_bloqueo_no_se_levanta(ctx: Contexto, caso: str, bloqueos: list[str]
 
     for confirmado in (False, True):
         respuesta = llamar(
-            oc_crear(ArgsCrear(caso=caso, payload=payload, confirmado=confirmado), ctx)
+            oc_crear.ainvoke({"caso": caso, "payload": payload, "confirmado": confirmado, "ctx": ctx})
         )
         assert respuesta["ok"] is False
         for codigo in bloqueos:
@@ -250,12 +248,12 @@ def _payload_que_miente(solicitud_id: str) -> dict[str, Any]:
 def test_las_cinco_devuelven_string_json(ctx: Contexto) -> None:
     """Las 5 herramientas devuelven `str` parseable con `ok` (I8)."""
     caso = "sol-001"
-    assert datos(llamar(oc_leer_paquete(ArgsCaso(caso=caso), ctx)))["caso"] == caso
-    validacion = datos(llamar(oc_validar(ArgsValidar(caso=caso), ctx)))
-    evidencia = datos(llamar(oc_generar_evidencia(ArgsCaso(caso=caso), ctx)))
+    assert datos(llamar(oc_leer_paquete.ainvoke({"caso": caso, "ctx": ctx})))["caso"] == caso
+    validacion = datos(llamar(oc_validar.ainvoke({"caso": caso, "ctx": ctx})))
+    evidencia = datos(llamar(oc_generar_evidencia.ainvoke({"caso": caso, "ctx": ctx})))
     assert set(evidencia) == {"ruta", "sha256"}
     payload = payload_del_caso(ctx, caso, validacion["derivados"])
-    creada = datos(llamar(oc_crear(ArgsCrear(caso=caso, payload=payload), ctx)))
+    creada = datos(llamar(oc_crear.ainvoke({"caso": caso, "payload": payload, "ctx": ctx})))
     assert set(creada) == {"numero_oc", "fecha", "idempotente", "retroactiva"}
 
 
@@ -266,11 +264,11 @@ def test_las_cinco_devuelven_string_json(ctx: Contexto) -> None:
 def test_caso_invalido_en_las_cinco(ctx: Contexto, caso: str) -> None:
     """Ninguna herramienta lanza con un caso inexistente o con recorrido de rutas."""
     respuestas = [
-        llamar(oc_leer_paquete(ArgsCaso(caso=caso), ctx)),
-        llamar(oc_validar(ArgsValidar(caso=caso), ctx)),
-        llamar(oc_generar_evidencia(ArgsCaso(caso=caso), ctx)),
-        llamar(oc_construir_payload(ArgsConstruirPayload(caso=caso), ctx)),
-        llamar(oc_crear(ArgsCrear(caso=caso, payload={}), ctx)),
+        llamar(oc_leer_paquete.ainvoke({"caso": caso, "ctx": ctx})),
+        llamar(oc_validar.ainvoke({"caso": caso, "ctx": ctx})),
+        llamar(oc_generar_evidencia.ainvoke({"caso": caso, "ctx": ctx})),
+        llamar(oc_construir_payload.ainvoke({"caso": caso, "ctx": ctx})),
+        llamar(oc_crear.ainvoke({"caso": caso, "payload": {}, "ctx": ctx})),
     ]
     for respuesta in respuestas:
         assert respuesta["ok"] is False
@@ -281,15 +279,15 @@ def test_solicitud_malformada_no_lanza(ctx: Contexto, raiz: Path) -> None:
     """Un `solicitud.json` ilegible devuelve `{ok: false}` con sugerencia (HU-6)."""
     caso = _caso_propio(raiz, "sol-001", "roto", {"solicitud.json": "{esto no es json"})
 
-    respuesta = llamar(oc_leer_paquete(ArgsCaso(caso=caso), ctx))
+    respuesta = llamar(oc_leer_paquete.ainvoke({"caso": caso, "ctx": ctx}))
     assert respuesta["ok"] is False
     assert "solicitud.json" in respuesta["error"]
     assert "reenvíe" in respuesta["error"]
 
     for otra in (
-        llamar(oc_validar(ArgsValidar(caso=caso), ctx)),
-        llamar(oc_construir_payload(ArgsConstruirPayload(caso=caso), ctx)),
-        llamar(oc_crear(ArgsCrear(caso=caso, payload={}), ctx)),
+        llamar(oc_validar.ainvoke({"caso": caso, "ctx": ctx})),
+        llamar(oc_construir_payload.ainvoke({"caso": caso, "ctx": ctx})),
+        llamar(oc_crear.ainvoke({"caso": caso, "payload": {}, "ctx": ctx})),
     ):
         assert otra["ok"] is False
 
@@ -300,7 +298,7 @@ def test_monto_no_numerico_no_lanza(ctx: Contexto, raiz: Path) -> None:
     crudo["valor_total"] = "once millones"
     caso = _caso_propio(raiz, "sol-001", "monto", {"solicitud.json": json.dumps(crudo)})
 
-    respuesta = llamar(oc_validar(ArgsValidar(caso=caso), ctx))
+    respuesta = llamar(oc_validar.ainvoke({"caso": caso, "ctx": ctx}))
     assert respuesta["ok"] is False
     assert "valor_total" in respuesta["error"]
 
@@ -309,13 +307,13 @@ def test_adjunto_ausente_no_lanza(ctx: Contexto, raiz: Path) -> None:
     """Sin `aprobacion.json` ni `cotizacion.txt`: campos en None y `faltantes` (HU-1)."""
     caso = _caso_propio(raiz, "sol-001", "pelado", {}, borrar=["aprobacion.json", "cotizacion.txt"])
 
-    paquete = datos(llamar(oc_leer_paquete(ArgsCaso(caso=caso), ctx)))
+    paquete = datos(llamar(oc_leer_paquete.ainvoke({"caso": caso, "ctx": ctx})))
     assert paquete["aprobacion"] is None
     assert paquete["cotizacion"] is None
     assert sorted(paquete["faltantes"]) == ["aprobacion.json", "cotizacion.txt"]
 
     # Sin aprobación, RC2 bloquea; la herramienta no se cae.
-    validacion = datos(llamar(oc_validar(ArgsValidar(caso=caso), ctx)))
+    validacion = datos(llamar(oc_validar.ainvoke({"caso": caso, "ctx": ctx})))
     assert "RC2" in codigos(validacion["bloqueos"])
 
 
@@ -363,11 +361,11 @@ def _caso_propio(
 
 def test_idempotencia_de_sol_001(ctx: Contexto, raiz: Path) -> None:
     """Dos `oc_crear` del mismo caso: mismo número y **una sola** línea (I3)."""
-    validacion = datos(llamar(oc_validar(ArgsValidar(caso="sol-001"), ctx)))
+    validacion = datos(llamar(oc_validar.ainvoke({"caso": "sol-001", "ctx": ctx})))
     payload = payload_del_caso(ctx, "sol-001", validacion["derivados"])
 
-    primera = datos(llamar(oc_crear(ArgsCrear(caso="sol-001", payload=payload), ctx)))
-    segunda = datos(llamar(oc_crear(ArgsCrear(caso="sol-001", payload=payload), ctx)))
+    primera = datos(llamar(oc_crear.ainvoke({"caso": "sol-001", "payload": payload, "ctx": ctx})))
+    segunda = datos(llamar(oc_crear.ainvoke({"caso": "sol-001", "payload": payload, "ctx": ctx})))
 
     assert primera["numero_oc"] == segunda["numero_oc"] == PRIMERA_OC
     assert primera["idempotente"] is False
@@ -387,7 +385,7 @@ def test_idempotencia_de_sol_001(ctx: Contexto, raiz: Path) -> None:
 @pytest.mark.parametrize("caso", [caso for caso in CASOS if not MATRIZ[caso]["bloqueos"]])
 def test_invariantes_del_payload(ctx: Contexto, caso: str) -> None:
     """I1, I4, I5, I9 y los campos obligatorios del payload."""
-    validacion = datos(llamar(oc_validar(ArgsValidar(caso=caso), ctx)))
+    validacion = datos(llamar(oc_validar.ainvoke({"caso": caso, "ctx": ctx})))
     payload = payload_del_caso(ctx, caso, validacion["derivados"])
     orden = OrdenCompra.model_validate(payload)          # el payload revalida
 
@@ -411,14 +409,14 @@ def test_invariantes_del_payload(ctx: Contexto, caso: str) -> None:
 
 def test_unidad_se_infiere_del_item_de_la_cotizacion(ctx: Contexto) -> None:
     """sol-004 cotiza "Hora de arquitecto…" → `H`; sol-001 licencias → `UN` (ADR-005)."""
-    validacion = datos(llamar(oc_validar(ArgsValidar(caso="sol-004"), ctx)))
+    validacion = datos(llamar(oc_validar.ainvoke({"caso": "sol-004", "ctx": ctx})))
     assert payload_del_caso(ctx, "sol-004", validacion["derivados"])["posiciones"][0]["unidad"] == "H"
     assert payload_del_caso(ctx, "sol-001", {})["posiciones"][0]["unidad"] == "UN"
 
 
 def test_derivados_de_sol_006_llegan_al_payload(ctx: Contexto) -> None:
     """RC6 y RC7 completan el IVA y las condiciones de pago desde el proveedor."""
-    validacion = datos(llamar(oc_validar(ArgsValidar(caso="sol-006"), ctx)))
+    validacion = datos(llamar(oc_validar.ainvoke({"caso": "sol-006", "ctx": ctx})))
     payload = payload_del_caso(ctx, "sol-006", validacion["derivados"])
     assert payload["condiciones_pago"] == "Z030"
     assert payload["posiciones"][0]["indicador_iva"] == "C1"
@@ -426,13 +424,13 @@ def test_derivados_de_sol_006_llegan_al_payload(ctx: Contexto) -> None:
 
 def test_trazabilidad_asigna_fuente_a_cada_campo(ctx: Contexto, raiz: Path) -> None:
     """I7 · ADR-004: cada campo tiene fuente y la descripción completa se preserva."""
-    validacion = datos(llamar(oc_validar(ArgsValidar(caso="sol-001"), ctx)))
+    validacion = datos(llamar(oc_validar.ainvoke({"caso": "sol-001", "ctx": ctx})))
     # La evidencia va primero: el payload consume su sha256.
-    datos(llamar(oc_generar_evidencia(ArgsCaso(caso="sol-001"), ctx)))
+    datos(llamar(oc_generar_evidencia.ainvoke({"caso": "sol-001", "ctx": ctx})))
     construido = datos(
         llamar(
-            oc_construir_payload(
-                ArgsConstruirPayload(caso="sol-001", derivados=validacion["derivados"]), ctx
+            oc_construir_payload.ainvoke(
+                {"caso": "sol-001", "derivados": validacion["derivados"], "ctx": ctx}
             )
         )
     )
@@ -464,7 +462,7 @@ def test_trazabilidad_asigna_fuente_a_cada_campo(ctx: Contexto, raiz: Path) -> N
 
 def test_payload_exige_la_evidencia_primero(ctx: Contexto) -> None:
     """Sin evidencia, `oc_construir_payload` no inventa el hash: lo pide."""
-    respuesta = llamar(oc_construir_payload(ArgsConstruirPayload(caso="sol-001"), ctx))
+    respuesta = llamar(oc_construir_payload.ainvoke({"caso": "sol-001", "ctx": ctx}))
     assert respuesta["ok"] is False
     assert "genera primero la evidencia" in respuesta["error"]
 
@@ -473,7 +471,7 @@ def test_evidencia_y_su_hash(ctx: Contexto, raiz: Path) -> None:
     """El sha256 es del contenido exacto escrito y viaja al payload."""
     import hashlib
 
-    evidencia = datos(llamar(oc_generar_evidencia(ArgsCaso(caso="sol-001"), ctx)))
+    evidencia = datos(llamar(oc_generar_evidencia.ainvoke({"caso": "sol-001", "ctx": ctx})))
     archivo = raiz / "out" / "sol-001" / "aprobacion.txt"
     contenido = archivo.read_text(encoding="utf-8")
 
@@ -483,7 +481,7 @@ def test_evidencia_y_su_hash(ctx: Contexto, raiz: Path) -> None:
         assert encabezado in contenido
     assert "Aprobado, proceder con la orden de compra." in contenido
 
-    payload = datos(llamar(oc_construir_payload(ArgsConstruirPayload(caso="sol-001"), ctx)))
+    payload = datos(llamar(oc_construir_payload.ainvoke({"caso": "sol-001", "ctx": ctx})))
     assert payload["payload"]["aprobador"]["evidencia_sha256"] == evidencia["sha256"]
 
 
@@ -492,26 +490,26 @@ def test_evidencia_y_su_hash(ctx: Contexto, raiz: Path) -> None:
 
 def test_oc_validar_no_usa_el_paquete_alterado(ctx: Contexto) -> None:
     """Un paquete manipulado no cambia la validación: se relee de fixtures (CA2)."""
-    paquete = datos(llamar(oc_leer_paquete(ArgsCaso(caso="sol-002"), ctx)))
+    paquete = datos(llamar(oc_leer_paquete.ainvoke({"caso": "sol-002", "ctx": ctx})))
     paquete["solicitud"]["proveedor_nit"] = "900555111"   # el NIT de un proveedor que sí existe
 
-    validacion = datos(llamar(oc_validar(ArgsValidar(caso="sol-002", paquete=paquete), ctx)))
+    validacion = datos(llamar(oc_validar.ainvoke({"caso": "sol-002", "paquete": paquete, "ctx": ctx})))
     assert codigos(validacion["bloqueos"]) == ["RC1"]
 
 
 def test_oc_validar_rechaza_un_paquete_de_otro_caso(ctx: Contexto) -> None:
-    paquete = datos(llamar(oc_leer_paquete(ArgsCaso(caso="sol-001"), ctx)))
-    respuesta = llamar(oc_validar(ArgsValidar(caso="sol-004", paquete=paquete), ctx))
+    paquete = datos(llamar(oc_leer_paquete.ainvoke({"caso": "sol-001", "ctx": ctx})))
+    respuesta = llamar(oc_validar.ainvoke({"caso": "sol-004", "paquete": paquete, "ctx": ctx}))
     assert respuesta["ok"] is False
     assert "sol-001" in respuesta["error"]
 
 
 def test_payload_rechaza_un_derivado_inventado(ctx: Contexto) -> None:
     """Un derivado que ningún control calculó no se escribe en la OC (CA2)."""
-    datos(llamar(oc_generar_evidencia(ArgsCaso(caso="sol-001"), ctx)))
+    datos(llamar(oc_generar_evidencia.ainvoke({"caso": "sol-001", "ctx": ctx})))
     respuesta = llamar(
-        oc_construir_payload(
-            ArgsConstruirPayload(caso="sol-001", derivados={"indicador_iva": "C9"}), ctx
+        oc_construir_payload.ainvoke(
+            {"caso": "sol-001", "derivados": {"indicador_iva": "C9"}, "ctx": ctx}
         )
     )
     assert respuesta["ok"] is False
@@ -519,19 +517,19 @@ def test_payload_rechaza_un_derivado_inventado(ctx: Contexto) -> None:
 
 
 def test_oc_crear_rechaza_un_payload_de_otra_solicitud(ctx: Contexto) -> None:
-    validacion = datos(llamar(oc_validar(ArgsValidar(caso="sol-001"), ctx)))
+    validacion = datos(llamar(oc_validar.ainvoke({"caso": "sol-001", "ctx": ctx})))
     payload = payload_del_caso(ctx, "sol-001", validacion["derivados"])
 
-    respuesta = llamar(oc_crear(ArgsCrear(caso="sol-004", payload=payload), ctx))
+    respuesta = llamar(oc_crear.ainvoke({"caso": "sol-004", "payload": payload, "ctx": ctx}))
     assert respuesta["ok"] is False
     assert "SOL-2026-001" in respuesta["error"]
 
 
 def test_confirmado_escribe_la_sesion_en_la_excepcion(ctx: Contexto, raiz: Path) -> None:
     """ADR-006: `confirmado_por` queda con el `session_id` de quien confirmó."""
-    validacion = datos(llamar(oc_validar(ArgsValidar(caso="sol-004"), ctx)))
+    validacion = datos(llamar(oc_validar.ainvoke({"caso": "sol-004", "ctx": ctx})))
     payload = payload_del_caso(ctx, "sol-004", validacion["derivados"])
-    datos(llamar(oc_crear(ArgsCrear(caso="sol-004", payload=payload, confirmado=True), ctx)))
+    datos(llamar(oc_crear.ainvoke({"caso": "sol-004", "payload": payload, "confirmado": True, "ctx": ctx})))
 
     guardada = json.loads(
         (raiz / "out" / "sap" / "ordenes.jsonl").read_text(encoding="utf-8").splitlines()[0]
@@ -551,12 +549,12 @@ def test_una_fila_de_control_por_intento(ctx: Contexto, raiz: Path) -> None:
     # `oc_crear`. Registrar en los dos sitios duplicaría la fila.
     desenlaces: list[str] = []
     for caso in CASOS:
-        validacion = datos(llamar(oc_validar(ArgsValidar(caso=caso), ctx)))
+        validacion = datos(llamar(oc_validar.ainvoke({"caso": caso, "ctx": ctx})))
         if validacion["bloqueos"]:
             desenlaces.append("bloqueada")
             continue
         payload = payload_del_caso(ctx, caso, validacion["derivados"])
-        llamar(oc_crear(ArgsCrear(caso=caso, payload=payload, confirmado=True), ctx))
+        llamar(oc_crear.ainvoke({"caso": caso, "payload": payload, "confirmado": True, "ctx": ctx}))
         desenlaces.append("creada")
 
     filas = leer_control(raiz)
@@ -570,8 +568,8 @@ def test_una_fila_de_control_por_intento(ctx: Contexto, raiz: Path) -> None:
 
 def test_cada_llamada_queda_en_la_bitacora(ctx: Contexto, raiz: Path) -> None:
     """CA4: una línea por llamada en `out/log.jsonl`, sin volcar el payload."""
-    llamar(oc_leer_paquete(ArgsCaso(caso="sol-001"), ctx))
-    llamar(oc_validar(ArgsValidar(caso="no-existe"), ctx))
+    llamar(oc_leer_paquete.ainvoke({"caso": "sol-001", "ctx": ctx}))
+    llamar(oc_validar.ainvoke({"caso": "no-existe", "ctx": ctx}))
 
     lineas = (raiz / "out" / "log.jsonl").read_text(encoding="utf-8").splitlines()
     registros = [json.loads(linea) for linea in lineas]
@@ -586,7 +584,7 @@ def test_cada_llamada_queda_en_la_bitacora(ctx: Contexto, raiz: Path) -> None:
 
 
 def test_el_registro_declara_las_cinco_herramientas() -> None:
-    nombres = [herramienta.nombre for herramienta in HERRAMIENTAS]
+    nombres = [herramienta.name for herramienta in HERRAMIENTAS]
     assert nombres == [
         "oc_leer_paquete",
         "oc_validar",
@@ -597,18 +595,30 @@ def test_el_registro_declara_las_cinco_herramientas() -> None:
     for herramienta in HERRAMIENTAS:
         assert herramienta.description.strip()
         # El esquema de args es lo que alimenta el JSON Schema del tool-calling.
-        assert "properties" in herramienta.args.model_json_schema()
+        # Con `@tool` lo infiere LangChain de la firma y `args` ya son las
+        # `properties`; el `ctx` inyectado no aparece, que es el punto.
+        assert herramienta.args
+        assert "ctx" not in herramienta.args
 
 
-def test_execute_valida_los_argumentos_crudos(ctx: Contexto) -> None:
-    """El registro valida antes de ejecutar y devuelve el error, no lanza (PRD §6.2)."""
+def test_ainvoke_valida_los_argumentos_crudos(ctx: Contexto) -> None:
+    """La herramienta valida antes de ejecutar y devuelve el error, no lanza (PRD §6.2).
+
+    `@tool` valida contra el esquema que infirió de la firma y, por omisión,
+    **lanza** `ValidationError`; `handle_validation_error` es lo que mantiene C3.
+    Un argumento de más ya no es un error: el esquema inferido no admite
+    `extra="forbid"`, así que LangChain lo ignora en silencio.
+    """
     leer = HERRAMIENTAS[0]
-    assert datos(llamar(leer.execute({"caso": "sol-001"}, ctx)))["caso"] == "sol-001"
+    assert datos(llamar(leer.ainvoke({"caso": "sol-001", "ctx": ctx})))["caso"] == "sol-001"
 
-    for crudos in ({}, {"caso": 5}, {"caso": "sol-001", "sobra": 1}):
-        respuesta = llamar(leer.execute(crudos, ctx))
+    for crudos in ({"ctx": ctx}, {"caso": 5, "ctx": ctx}):
+        respuesta = llamar(leer.ainvoke(crudos))
         assert respuesta["ok"] is False
         assert "Argumentos inválidos" in respuesta["error"]
+
+    de_mas = datos(llamar(leer.ainvoke({"caso": "sol-001", "ctx": ctx, "sobra": 1})))
+    assert de_mas["caso"] == "sol-001"
 
 
 # ── Parseo (T2.2 · hallazgo H1) ───────────────────────────────────────────
@@ -694,7 +704,7 @@ def test_el_parseo_de_produccion_coincide_con_el_del_andamiaje(ctx: Contexto) ->
     fija que no divergen en los campos que usan los controles.
     """
     for caso in CASOS:
-        producido = datos(llamar(oc_leer_paquete(ArgsCaso(caso=caso), ctx)))
+        producido = datos(llamar(oc_leer_paquete.ainvoke({"caso": caso, "ctx": ctx})))
         andamiaje = construir_paquete(caso)
         assert producido["solicitud"] == andamiaje.solicitud.model_dump(mode="json")
         assert producido["aprobacion"] == (

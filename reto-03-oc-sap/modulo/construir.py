@@ -66,23 +66,22 @@ Uso desde otra plataforma de agentes:
 
     ctx = Contexto(raiz=Path("."), session_id="mi-sesion")
     for herramienta in HERRAMIENTAS:
-        print(herramienta.nombre, herramienta.description)
-        print(herramienta.args.model_json_schema())
+        print(herramienta.name, herramienta.description)
+        print(herramienta.args)                      # JSON Schema de los campos
 
-Cada `Herramienta` lleva los tres miembros del contrato del PRD §6.2:
-`description` (la frase que el modelo lee para decidir cuándo llamarla), `args`
-(el esquema Pydantic del que sale el JSON Schema del tool-calling) y `execute`
-(que devuelve un string JSON y nunca lanza).
+    respuesta = await HERRAMIENTAS[0].ainvoke({"caso": "sol-001", "ctx": ctx})
+
+Cada herramienta es un `BaseTool` de LangChain (rama `refactor/langchain`), así
+que los tres miembros del contrato del PRD §6.2 se llaman `description` (la frase
+que el modelo lee para decidir cuándo llamarla), `args_schema` (el esquema
+Pydantic del que sale el JSON Schema del tool-calling) y `ainvoke` (que devuelve
+un string JSON y nunca lanza). El `Contexto` no aparece en el esquema del modelo
+—es un `InjectedToolArg`— pero sí hay que pasarlo en el dict de `ainvoke`.
 """
 
 from app.tools.oc import (
     HERRAMIENTAS,
-    ArgsCaso,
-    ArgsConstruirPayload,
-    ArgsCrear,
-    ArgsValidar,
     Contexto,
-    Herramienta,
     casos_disponibles,
     oc_construir_payload,
     oc_crear,
@@ -93,12 +92,7 @@ from app.tools.oc import (
 
 __all__ = [
     "HERRAMIENTAS",
-    "ArgsCaso",
-    "ArgsConstruirPayload",
-    "ArgsCrear",
-    "ArgsValidar",
     "Contexto",
-    "Herramienta",
     "casos_disponibles",
     "oc_construir_payload",
     "oc_crear",
