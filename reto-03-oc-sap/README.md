@@ -13,10 +13,16 @@ Periferia IT Group · prueba técnica. El diseño, las decisiones y los trade-of
 
 ## Enlace público
 
-> **Chat:** _<pendiente: pegar aquí la URL de Streamlit Community Cloud>_
+> ### 👉 https://dthqchyfexanhboh8faz4e.streamlit.app/
 >
 > Sin clave de acceso: el enlace es público (PRD §6.1 permite no autenticar).
-> Los pasos para publicarlo están en [`DEPLOY.md`](DEPLOY.md).
+>
+> **Si tarda en cargar la primera vez, es normal.** Streamlit Community Cloud
+> suspende las aplicaciones inactivas y el primer arranque tiene que instalar
+> dependencias y despertar el contenedor: entre 30 segundos y 2 minutos. Una vez
+> despierta responde en menos de 2 segundos.
+>
+> Los pasos de publicación y el mantenimiento están en [`DEPLOY.md`](DEPLOY.md).
 
 ---
 

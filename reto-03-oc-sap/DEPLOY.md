@@ -77,11 +77,35 @@ simple es el correcto.
 
 ---
 
+## ⚠️ Antes de la defensa: despierta la app
+
+Community Cloud **suspende las aplicaciones inactivas**. El primer arranque instala
+dependencias y levanta el contenedor: medido entre 30 segundos y 2 minutos. Ya
+despierta, responde en **menos de 2 segundos**.
+
+Eso es un riesgo concreto: si el evaluador abre la URL en frío, hay un silencio
+incómodo de minuto y medio delante de todos.
+
+**Rutina recomendada:**
+
+1. **15 minutos antes**, abre la URL y espera a que cargue del todo.
+2. Pulsa el atajo de **sol-001** y deja que termine. Eso calienta además el cliente de
+   OpenAI y la lectura de los fixtures, no solo el contenedor.
+3. **Deja la pestaña abierta** durante la sesión. Mientras haya una conexión activa la
+   app no se duerme.
+4. Si entre el calentamiento y la demo pasan más de 30 minutos, repite el paso 2.
+
+Si aun así te toca arrancar en frío delante del evaluador, aprovecha la espera para
+mostrar `demo.py` en la terminal: **no requiere clave ni red**, procesa los 6 casos en
+menos de un segundo y es el entregable que demuestra el determinismo.
+
+---
+
 ## Mantenimiento durante la defensa
 
 | Situación | Qué hacer |
 |---|---|
-| La app está "dormida" (Community Cloud duerme apps inactivas) | Ábrela 10 minutos antes y pulsa un atajo; el primer arranque tarda ~1 minuto. |
+| La app está "dormida" | Ver la rutina de calentamiento de arriba. |
 | Cambiaste código | `git push`: Streamlit redespliega solo. |
 | Cambiaste secretos | Guardar los secretos reinicia la app; no hace falta redesplegar. |
 | `out/` en el servidor | El disco de Community Cloud es efímero: las OC creadas se pierden al reiniciar, y la numeración vuelve a `4500000001`. Es aceptable para la demo y está dicho en `SOLUCION.md`. |
